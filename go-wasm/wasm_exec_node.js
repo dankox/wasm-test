@@ -51,9 +51,11 @@ globalThis.http = require("http");
 		// console.log(await(await gomod.HttpGet("https://www.google.com")).text())
 		
 		const getter = {
-			// fetch: fetch,
-			fetch: () => new Promise(null),
-			// fetch: () => new Promise((res)=>res()),
+			fetch: fetch,
+			// fetch: () => new Promise(null),
+			// fetch: () => new Promise((res)=> {
+			// 	return new Promise((r) => res(r))
+			// }),
 		}
 
 		const err = false;
@@ -67,6 +69,7 @@ globalThis.http = require("http");
 			console.log(gomod);
 			try {
 				const stuff = await gomod.GetStuff("https://www.abagoogle.com", getter);
+				// console.log("GetStuff:", await stuff)
 				console.log("GetStuff:", await stuff.text())
 			} catch (e) {
 				console.log("getstuff error:", e)

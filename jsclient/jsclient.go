@@ -101,8 +101,6 @@ func GetStuff() js.Func {
 
 func await(awaitable js.Value, funName string) (js.Value, js.Value) {
 	if !jsIsThenable(awaitable) {
-		// if !awaitable.InstanceOf(js.Global().Get("Promise")) {
-		// return js.Null(), fmt.Errorf("%s is not thenable", awaitable.String())
 		return js.Null(), jsError(fmt.Sprintf("%s is not thenable", funName))
 	}
 	then := make(chan []js.Value)
