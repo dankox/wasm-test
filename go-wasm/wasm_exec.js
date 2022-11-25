@@ -96,6 +96,7 @@
 		constructor() {
 			this.argv = ["js"];
 			this.env = {};
+			this.exports = {};
 			this.exit = (code) => {
 				if (code !== 0) {
 					console.warn("exit code:", code);
@@ -222,6 +223,7 @@
 						delete this._goRefCounts;
 						delete this._ids;
 						delete this._idPool;
+						this.exports = {};
 						this.exit(code);
 					},
 
@@ -310,7 +312,26 @@
 					// func valueGet(v ref, p string) ref
 					"syscall/js.valueGet": (sp) => {
 						sp >>>= 0;
-						const result = Reflect.get(loadValue(sp + 8), loadString(sp + 16));
+						const obj = loadValue(sp + 8);
+						const ind = loadString(sp + 16);
+						const result = Reflect.get(obj, ind);
+						// sp = this._inst.exports.getsp() >>> 0; // see comment above
+						// storeValue(sp + 32, result);
+
+						// from deno glue code
+						if (result === undefined) {
+							if (this.exports === undefined) {
+								throw new Error("Memory not initialized!");
+							}
+							if (obj == globalThis) {
+								if (ind == "fs") result = fs;
+								else if (ind == "performance") result = performance;
+								else if (ind == "process") result = process;
+								else if (ind == "crypto") result = crypto;
+								else result = Reflect.get(this.exports, ind);
+							}
+						}
+		
 						sp = this._inst.exports.getsp() >>> 0; // see comment above
 						storeValue(sp + 32, result);
 					},
@@ -318,7 +339,12 @@
 					// func valueSet(v ref, p string, x ref)
 					"syscall/js.valueSet": (sp) => {
 						sp >>>= 0;
-						Reflect.set(loadValue(sp + 8), loadString(sp + 16), loadValue(sp + 32));
+						// Reflect.set(loadValue(sp + 8), loadString(sp + 16), loadValue(sp + 32));
+						let target = loadValue(sp + 8);
+						const name = loadString(sp + 16);
+						const value = loadValue(sp + 32);
+						if (target == globalThis) target = this.exports;		
+						Reflect.set(target, name, value);
 					},
 
 					// func valueDelete(v ref, p string)
@@ -343,10 +369,15 @@
 					"syscall/js.valueCall": (sp) => {
 						sp >>>= 0;
 						try {
+							// obtain "this" object from Go ref
 							const v = loadValue(sp + 8);
+							// obtain method reference from Go ref
 							const m = Reflect.get(v, loadString(sp + 16));
+							// obtain array of arguments (js.Value)
 							const args = loadSliceOfValues(sp + 32);
+							//run method
 							const result = Reflect.apply(m, v, args);
+
 							sp = this._inst.exports.getsp() >>> 0; // see comment above
 							storeValue(sp + 56, result);
 							this.mem.setUint8(sp + 64, 1);
