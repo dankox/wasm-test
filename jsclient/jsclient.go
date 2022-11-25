@@ -71,24 +71,40 @@ func GetStuff() js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		stuff := args[0]
 		getter := args[1]
+
+		// NOTE: can't do it directly because event loop will be blocked and can't call `fetch`
+		// We have to create Promise and run it in goroutine
 		handler := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			resolve := args[0]
 			reject := args[1]
 			go func() {
-				res, err := await(getter.Call("request", stuff))
-				if err != nil {
+				// FIXME: maybe guard js.Call() if it panics, like calling null Promise resolver?
+				defer func() {
+					if r := recover(); r != nil {
+						reject.Invoke(jsError(fmt.Sprintf("error? %v", r)))
+					}
+				}()
+
+				res, err := await(getter.Call("fetch", stuff), "fetch")
+				if !err.IsNull() {
 					reject.Invoke(err)
 				}
 				resolve.Invoke(res)
 			}()
 			return nil
 		})
+
 		promiseConstructor := js.Global().Get("Promise")
 		return promiseConstructor.New(handler)
 	})
 }
 
-func await(awaitable js.Value) ([]js.Value, []js.Value) {
+func await(awaitable js.Value, funName string) (js.Value, js.Value) {
+	if !jsIsThenable(awaitable) {
+		// if !awaitable.InstanceOf(js.Global().Get("Promise")) {
+		// return js.Null(), fmt.Errorf("%s is not thenable", awaitable.String())
+		return js.Null(), jsError(fmt.Sprintf("%s is not thenable", funName))
+	}
 	then := make(chan []js.Value)
 	defer close(then)
 	thenFunc := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
@@ -109,10 +125,39 @@ func await(awaitable js.Value) ([]js.Value, []js.Value) {
 
 	select {
 	case result := <-then:
-		return result, nil
+		if len(result) > 0 {
+			return result[0], js.Null()
+		}
+		return js.Undefined(), js.Null()
 	case err := <-catch:
-		return nil, err
+		if len(err) > 0 {
+			return js.Null(), err[0]
+		}
+		// return js.Null(), fmt.Errorf("undefined error")
+		return js.Null(), jsError("undefined error")
 	}
+}
+
+func jsIsThenable(thenable js.Value) bool {
+	if thenable.Type() != js.TypeObject {
+		return false
+	}
+	thenF := thenable.Get("then")
+	catchF := thenable.Get("catch")
+	return thenF.Type() == js.TypeFunction && catchF.Type() == js.TypeFunction
+}
+
+func jsError(err string) js.Value {
+	errorConstructor := js.Global().Get("Error")
+	return errorConstructor.New(err)
+}
+
+func jsInterfaces(list []js.Value) []interface{} {
+	ret := make([]interface{}, len(list))
+	for i, r := range list {
+		ret[i] = r
+	}
+	return ret
 }
 
 func old_main() {

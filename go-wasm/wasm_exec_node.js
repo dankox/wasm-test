@@ -21,7 +21,7 @@ globalThis.performance = {
 	},
 };
 
-globalThis.http = require("http")
+globalThis.http = require("http");
 // const crypto = require("crypto");
 // globalThis.crypto = {
 // 	getRandomValues(b) {
@@ -31,55 +31,61 @@ globalThis.http = require("http")
 // const fetch = require("isomorphic-fetch");
 // globalThis.fetch = fetch;
 
-require("./wasm_exec");
+(async function() {
 
-const go = new Go();
-go.argv = process.argv.slice(2);
-go.env = Object.assign({ TMPDIR: require("os").tmpdir() }, process.env);
-go.exit = process.exit;
-WebAssembly.instantiate(fs.readFileSync(process.argv[2]), go.importObject).then((result) => {
-	process.on("exit", (code) => { // Node.js exits if no event handler is pending
-		// if (code === 0 && !go.exited) {
-		// 	// deadlock, make Go print error and stack traces
-		// 	go._pendingEvent = { id: 0 };
-		// 	go._resume();
-		// }
-	});
-	process.on("beforeExit", async (code) => { // Node.js exits if no event handler is pending
-		// calling Go function which returns promise
-		let response = await HttpGet("https://www.google.com");
-		let res_str = await response.text();
-		console.log("HttpGet:", res_str)
-		let getter = require("../http")
-		let stuff = await GetStuff("https://www.google.com", getter);
-		// let res_str = await response.text();
-		console.log("GetStuff:", stuff)
-		process.exit(0);
-	});
-	return go.run(result.instance);
-}).catch((err) => {
-	console.error(err);
-	process.exit(1);
-});
+	require("./wasm_exec");
+	
+	try {
+		const go = new Go();
+		go.argv = process.argv.slice(2);
+		go.env = Object.assign({ TMPDIR: require("os").tmpdir() }, process.env);
+		go.exit = process.exit;
+		const buf = fs.readFileSync(process.argv[2])
+		const inst = await WebAssembly.instantiate(buf, go.importObject)
+		let promise = go.run(inst.instance)
+		// console.log(promise)
+		// await go.run(inst.instance);
+		console.log("go.run done!")
+		const gomod = go.exports
+		
+		// console.log(await(await gomod.HttpGet("https://www.google.com")).text())
+		
+		const getter = {
+			// fetch: fetch,
+			fetch: () => new Promise(null),
+			// fetch: () => new Promise((res)=>res()),
+		}
 
-// (async function() {
-// 	try {
-// 		let result = await WebAssembly.instantiate(fs.readFileSync(process.argv[2]), go.importObject);
-// 		// process.on("exit", (code) => { // Node.js exits if no event handler is pending
-// 		// 	if (code === 0 && !go.exited) {
-// 		// 		// deadlock, make Go print error and stack traces
-// 		// 		go._pendingEvent = { id: 0 };
-// 		// 		go._resume();
-// 		// 	}
-// 		// });
-// 		console.log("starting")
-// 		await go.run(result.instance);
-// 		console.log("started")
-// 		let response = await HttpGet("https://www.google.com")
-// 		console.log("HttpGet:", response)
-// 	} catch(err) {
-// 		console.error(err);
-// 		process.exit(1);
-// 	};
-// })();
+		const err = false;
+		let test = new Promise((resolve, reject) => {
+			if (!err) resolve("done!");
+			else reject("error!");
+		});
+		console.log(await test);
 
+		setTimeout(async ()=>{
+			console.log(gomod);
+			try {
+				const stuff = await gomod.GetStuff("https://www.abagoogle.com", getter);
+				console.log("GetStuff:", await stuff.text())
+			} catch (e) {
+				console.log("getstuff error:", e)
+			}
+		}, 100);
+
+		setTimeout(() => console.log("hello danko"), 2000);
+
+		// console.log(await fetch("https://www.google.com"));
+		// process.on("beforeExit", async(code) => {
+		// 	console.log(gomod);
+		// 	const stuff = await gomod.GetStuff("https://www.google.com", getter);
+		// 	// const stuff = await GetStuff("https://www.google.com", getter);
+		// 	console.log("GetStuff:", await stuff.text())
+		// 	process.exit(0);
+		// })
+		
+	} catch (err) {
+		console.error("catched error:", err);
+		process.exit(1);
+	}
+})()
